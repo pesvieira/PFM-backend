@@ -1,0 +1,294 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+////////////////////////////////////////////////////////////
+// ENUMS
+////////////////////////////////////////////////////////////
+
+enum Currency {
+  USD
+  EUR
+  BRL
+}
+
+enum AccountType {
+  CHECKING
+  SAVINGS
+  CREDIT_CARD
+  INVESTMENT
+  CASH
+}
+
+enum EntryType {
+  DEBIT
+  CREDIT
+}
+
+enum TransactionStatus {
+  PENDING
+  POSTED
+  CANCELLED
+}
+
+enum RecurrenceType {
+  ONCE
+  DAILY
+  WEEKLY
+  MONTHLY
+  YEARLY
+}
+
+enum ProjectStatus {
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+////////////////////////////////////////////////////////////
+// USER
+////////////////////////////////////////////////////////////
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+
+  firstName    String   @db.VarChar(100)
+  lastName     String   @db.VarChar(100)
+
+  email        String   @unique @db.VarChar(255)
+
+  passwordHash String   @db.VarChar(255)
+
+  accounts     Account[]
+  categories   Category[]
+  projects     Project[]
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("users")
+}
+
+////////////////////////////////////////////////////////////
+// BANK
+////////////////////////////////////////////////////////////
+
+model Bank {
+  id        String @id @default(uuid()) @db.Uuid
+
+  name      String @unique @db.VarChar(120)
+
+  country   String @default("US") @db.Char(2)
+
+  accounts  Account[]
+
+  logo      String? @db.VarChar(255)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("banks")
+}
+
+////////////////////////////////////////////////////////////
+// ACCOUNT
+////////////////////////////////////////////////////////////
+
+model Account {
+  id              String @id @default(uuid()) @db.Uuid
+
+  userId          String @db.Uuid
+  user            User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  bankId          String @db.Uuid
+  bank            Bank @relation(fields: [bankId], references: [id])
+
+  name            String @db.VarChar(100)
+
+  accountNumber   String? @db.VarChar(50)
+
+  type            AccountType
+
+  currency        Currency
+
+  initialBalance  Decimal @db.Decimal(15,2)
+
+  isActive        Boolean @default(true)
+
+  transactions    Transaction[]
+  scheduledTransactions ScheduledTransaction[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+  @@index([bankId])
+
+  @@unique([userId, name])
+
+  @@map("accounts")
+}
+
+////////////////////////////////////////////////////////////
+// CATEGORY
+////////////////////////////////////////////////////////////
+
+model Category {
+  id          String @id @default(uuid()) @db.Uuid
+
+  userId      String @db.Uuid
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name        String @db.VarChar(80)
+
+  color       String? @db.Char(7)
+
+  icon        String? @db.VarChar(50)
+
+  transactions Transaction[]
+  scheduledTransactions ScheduledTransaction[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, name])
+  @@index([userId])
+
+  @@map("categories")
+}
+
+////////////////////////////////////////////////////////////
+// PROJECT
+////////////////////////////////////////////////////////////
+
+model Project {
+  id          String @id @default(uuid()) @db.Uuid
+
+  userId      String @db.Uuid
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name        String @db.VarChar(120)
+
+  description String?
+
+  budget      Decimal? @db.Decimal(15,2)
+
+  startDate   DateTime
+  endDate     DateTime?
+
+  status      ProjectStatus @default(ACTIVE)
+
+  transactions Transaction[]
+  scheduledTransactions ScheduledTransaction[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@unique([userId, name])
+
+  @@map("projects")
+}
+
+////////////////////////////////////////////////////////////
+// TRANSACTION (LEDGER)
+////////////////////////////////////////////////////////////
+
+model Transaction {
+  id        String @id @default(uuid()) @db.Uuid
+
+  accountId String @db.Uuid
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  categoryId String @db.Uuid
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  projectId  String? @db.Uuid
+  project    Project? @relation(fields: [projectId], references: [id], onDelete: Restrict)
+
+  scheduledTransactionId String? @db.Uuid
+  scheduledTransaction ScheduledTransaction? @relation(fields: [scheduledTransactionId], references: [id])
+
+  //////////////////////////////////////////////////////////
+  // Transfer (Self Reference)
+  //////////////////////////////////////////////////////////
+
+  transferTransactionId String? @unique @db.Uuid
+  transferTransaction Transaction? @relation("TransactionTransfer", fields: [transferTransactionId], references: [id])
+  linkedTransaction Transaction? @relation("TransactionTransfer")
+
+  //////////////////////////////////////////////////////////
+  // Ledger Information
+  //////////////////////////////////////////////////////////
+
+  entryType EntryType
+  amount Decimal @db.Decimal(15,2)
+  description String?
+  status TransactionStatus @default(POSTED)
+  transactionDate DateTime
+  effectiveDate DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  //////////////////////////////////////////////////////////
+  // Indexes
+  //////////////////////////////////////////////////////////
+
+  @@index([accountId])
+  @@index([categoryId])
+  @@index([projectId])
+  @@index([transactionDate])
+  @@index([effectiveDate])
+  @@index([status])
+  @@index([entryType])
+  @@index([accountId, effectiveDate])
+  @@index([categoryId, effectiveDate])
+  @@index([projectId, effectiveDate])
+
+  @@map("transactions")
+}
+
+////////////////////////////////////////////////////////////
+// SCHEDULED TRANSACTION
+////////////////////////////////////////////////////////////
+
+model ScheduledTransaction {
+  id String @id @default(uuid()) @db.Uuid
+
+  accountId String @db.Uuid
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  categoryId String @db.Uuid
+  category Category @relation(fields: [categoryId], references: [id])
+
+  projectId String? @db.Uuid
+  project Project? @relation(fields: [projectId], references: [id])
+
+  entryType EntryType
+  amount Decimal @db.Decimal(15,2)
+  description String?
+  recurrence RecurrenceType
+  startDate DateTime @db.Date
+  endDate DateTime? @db.Date
+  nextExecution DateTime @db.Date
+  isActive Boolean @default(true)
+
+  transactions Transaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([accountId])
+  @@index([categoryId])
+  @@index([projectId])
+  @@index([nextExecution])
+  @@index([isActive])
+
+  @@map("scheduled_transactions")
+}
