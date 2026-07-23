@@ -10,6 +10,11 @@ npm run dev
 The API runs on `http://localhost:3000` by default. Set the `PORT` environment
 variable to use another port.
 
+## Database
+
+This application uses PostgreSQL as its relational database and Prisma ORM for
+database access and schema migrations.
+
 ## Endpoints
 
 ### Get a user
